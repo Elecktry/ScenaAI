@@ -20,6 +20,26 @@ type SavedVideo = {
   importedAt: string;
 };
 
+type CharacterImage = {
+  id: string;
+  url: string;
+  position: number;
+};
+
+type SavedCharacter = {
+  id: string;
+  name: string;
+  summary: string;
+  appearance: string;
+  hair: string;
+  outfit: string;
+  personality: string;
+  visualStyle: string;
+  visualPrompt: string;
+  images: CharacterImage[];
+};
+
+//biblioteca
 const LIBRARY_KEY = "scena-ai-imported-videos-v1";
 const LIBRARY_EVENT = "scena-imported-videos-updated";
 const POLL_MS = 4000;
@@ -60,6 +80,9 @@ export default function VideoTransform() {
   const imageInput = useRef<HTMLInputElement>(null);
   const polling = useRef(false);
 
+    const [savedCharacters, setSavedCharacters] = useState<SavedCharacter[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [loadingCharacters, setLoadingCharacters] = useState(false);
   const [video, setVideo] = useState<File | null>(null);
   const [references, setReferences] = useState<File[]>([]);
   const [prompt, setPrompt] = useState(
@@ -73,6 +96,48 @@ export default function VideoTransform() {
   const [requestId, setRequestId] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [saved, setSaved] = useState(false);
+
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedCharacters() {
+      setLoadingCharacters(true);
+
+      try {
+        const response = await fetch("/api/characters", {
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Não foi possível carregar os personagens."
+          );
+        }
+
+        if (!cancelled) {
+          setSavedCharacters(
+            Array.isArray(data.characters) ? data.characters : []
+          );
+        }
+      } catch (error) {
+        console.error("Erro ao carregar personagens:", error);
+      } finally {
+        if (!cancelled) {
+          setLoadingCharacters(false);
+        }
+      }
+    }
+
+    void loadSavedCharacters();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
 
   useEffect(() => {
     if (!loading) return;
@@ -169,6 +234,96 @@ export default function VideoTransform() {
       setLoading(false);
     }
   }
+
+
+  async function useSavedCharacter() {
+    const character = savedCharacters.find(
+      (item) => item.id === selectedCharacterId
+    );
+
+    if (!character) {
+      setError("Selecione um personagem salvo.");
+      return;
+    }
+
+    if (loading || processing) return;
+
+    if (!character.images?.length) {
+      setError(
+        "Este personagem ainda não possui imagens. Adicione referências no Character Studio."
+      );
+      return;
+    }
+
+    setError("");
+
+    try {
+      const orderedImages = [...character.images].sort(
+        (a, b) => a.position - b.position
+      );
+
+      const files: File[] = [];
+
+      for (const [index, image] of orderedImages.slice(0, 8).entries()) {
+        const response = await fetch(image.url);
+
+        if (!response.ok) {
+          throw new Error(
+            `Não foi possível carregar a imagem ${index + 1} do personagem.`
+          );
+        }
+
+        const blob = await response.blob();
+
+        if (!["image/jpeg", "image/png", "image/webp"].includes(blob.type)) {
+          throw new Error(
+            `A imagem ${index + 1} não está em JPG, PNG ou WEBP.`
+          );
+        }
+
+        files.push(
+          new File(
+            [blob],
+            `${character.name.replace(/[^a-zA-Z0-9-_]/g, "_")}_referencia_${index + 1}.${blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg"}`,
+            { type: blob.type }
+          )
+        );
+      }
+
+      if (!files.length) {
+        throw new Error("Nenhuma imagem válida foi encontrada.");
+      }
+
+      setReferences(files);
+
+      const details = [
+        `Personagem: ${character.name}`,
+        character.summary && `Resumo: ${character.summary}`,
+        character.appearance && `Aparência: ${character.appearance}`,
+        character.hair && `Cabelo: ${character.hair}`,
+        character.outfit && `Roupa: ${character.outfit}`,
+        character.personality && `Personalidade: ${character.personality}`,
+        character.visualStyle && `Estilo visual: ${character.visualStyle}`,
+        character.visualPrompt && `Continuidade visual: ${character.visualPrompt}`,
+      ].filter(Boolean).join("\n");
+
+      setPrompt(
+        `Replace the main person in the original video with the selected character. Preserve the original movements, timing, camera movement and scene composition as closely as possible.\n\n${details}`
+      );
+
+      setResultUrl("");
+      setSaved(false);
+      setStatus("idle");
+
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível usar este personagem."
+      );
+    }
+  }
+
 
   async function transformVideo() {
     if (!video) {
@@ -348,6 +503,82 @@ export default function VideoTransform() {
           <label className="mb-3 block text-sm font-medium">
             02 — Personagem de referência
           </label>
+
+
+          <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <label
+              htmlFor="saved-character"
+              className="mb-2 block text-sm font-medium text-white"
+            >
+              Usar personagem do Character Studio
+            </label>
+
+            <select
+              id="saved-character"
+              value={selectedCharacterId}
+              onChange={(event) => setSelectedCharacterId(event.target.value)}
+              disabled={processing || loadingCharacters}
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-sm text-white outline-none focus:border-white/30 disabled:opacity-60"
+            >
+              <option value="">
+                {loadingCharacters
+                  ? "Carregando personagens..."
+                  : "Selecione um personagem salvo"}
+              </option>
+
+              {savedCharacters.map((character) => (
+                <option key={character.id} value={character.id}>
+                  {character.name}
+                </option>
+              ))}
+            </select>
+
+            {selectedCharacterId && (
+              <div className="mt-3 flex items-center gap-3">
+                {savedCharacters.find(
+                  (character) => character.id === selectedCharacterId
+                )?.images?.[0]?.url && (
+                    <img
+                      src={
+                        [...(
+                          savedCharacters.find(
+                            (character) => character.id === selectedCharacterId
+                          )?.images ?? []
+                        )].sort((a, b) => a.position - b.position)[0].url
+                      }
+                      alt="Capa do personagem"
+                      className="size-14 rounded-lg border border-white/10 object-cover"
+                    />
+                  )}
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-white">
+                    {savedCharacters.find(
+                      (character) => character.id === selectedCharacterId
+                    )?.name}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    As referências serão carregadas no formulário.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => void useSavedCharacter()}
+              disabled={
+                processing ||
+                loadingCharacters ||
+                loading ||
+                !selectedCharacterId
+              }
+              className="mt-3 w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Usar personagem selecionado
+            </button>
+          </div>
+
 
           <button
             type="button"

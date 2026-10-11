@@ -50,6 +50,8 @@ export default function CharacterStudio() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [characterIdea, setCharacterIdea] = useState("");
+  const [generatingDraft, setGeneratingDraft] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [galleryCharacter, setGalleryCharacter] = useState<Character | null>(null);
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
@@ -109,6 +111,56 @@ export default function CharacterStudio() {
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+
+  async function handleGenerateDraft() {
+    setError("");
+    setNotice("");
+    setGeneratingDraft(true);
+
+    try {
+      const response = await fetch("/api/characters/draft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idea: characterIdea,
+          visualStyle: form.visualStyle,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Não foi possível preparar a ficha."
+        );
+      }
+
+      const draft = data.draft;
+
+      setForm((current) => ({
+        ...current,
+        ...draft,
+      }));
+
+      setEditingId(null);
+      setNotice(
+        data.message ||
+        "Rascunho preenchido. Revise os campos antes de salvar."
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao preparar a ficha do personagem."
+      );
+    } finally {
+      setGeneratingDraft(false);
+    }
+  }
+
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -216,9 +268,9 @@ export default function CharacterStudio() {
       setGalleryCharacter((current) =>
         current?.id === character.id
           ? {
-              ...current,
-              images: current.images.filter((item) => item.id !== image.id),
-            }
+            ...current,
+            images: current.images.filter((item) => item.id !== image.id),
+          }
           : current
       );
     } catch (err) {
@@ -341,11 +393,10 @@ export default function CharacterStudio() {
       {(error || notice) && (
         <div
           role="status"
-          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
-            error
-              ? "border-red-400/30 bg-red-950/30 text-red-200"
-              : "border-emerald-400/20 bg-emerald-950/20 text-emerald-200"
-          }`}
+          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${error
+            ? "border-red-400/30 bg-red-950/30 text-red-200"
+            : "border-emerald-400/20 bg-emerald-950/20 text-emerald-200"
+            }`}
         >
           {error || notice}
         </div>
@@ -359,6 +410,46 @@ export default function CharacterStudio() {
             </h2>
             <p className="mt-1 text-xs text-zinc-500">
               Preencha manualmente. A assistência por IA pode ser adicionada depois.
+            </p>
+          </div>
+
+
+          <div className="mb-5 rounded-xl border border-violet-400/20 bg-violet-950/20 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-xl">✦</span>
+              <div>
+                <h3 className="font-semibold text-white">
+                  Criar personagem com IA
+                </h3>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Descreva sua ideia e prepare uma ficha inicial.
+                </p>
+              </div>
+            </div>
+
+            <textarea
+              className={inputClass}
+              value={characterIdea}
+              onChange={(event) => setCharacterIdea(event.target.value)}
+              rows={3}
+              maxLength={5000}
+              placeholder="Ex.: um personagem alto, engraçado, medroso, com roupas verdes e estilo de animação 3D..."
+            />
+
+            <button
+              type="button"
+              disabled={generatingDraft || !characterIdea.trim()}
+              onClick={() => void handleGenerateDraft()}
+              className="mt-3 w-full rounded-xl bg-violet-400 px-4 py-3 text-sm font-semibold text-black transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generatingDraft
+                ? "Preparando ficha..."
+                : "✦ Criar com IA"}
+            </button>
+
+            <p className="mt-2 text-xs text-zinc-500">
+              A IA gera uma ficha inicial. Revise os detalhes antes de salvar.
+              A geração de imagens será adicionada separadamente.
             </p>
           </div>
 
@@ -577,6 +668,56 @@ export default function CharacterStudio() {
                         Editar
                       </button>
 
+
+                      <button
+                        type="button"
+                        disabled={uploadingId === character.id}
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            "Gerar uma nova imagem com a Higgsfield? Isso pode consumir créditos da sua conta."
+                          );
+
+                          if (!confirmed) return;
+
+                          setError("");
+                          setNotice("");
+                          setUploadingId(character.id);
+
+                          try {
+                            const response = await fetch(
+                              `/api/characters/${character.id}/generate-image`,
+                              { method: "POST" }
+                            );
+
+                            const data = await response.json();
+
+                            if (!response.ok) {
+                              throw new Error(
+                                data.error || "Não foi possível gerar a imagem."
+                              );
+                            }
+
+                            setNotice("Imagem gerada e adicionada à galeria!");
+                            await loadCharacters();
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "Erro ao gerar imagem com a Higgsfield."
+                            );
+                          } finally {
+                            setUploadingId(null);
+                          }
+                        }}
+                        className="rounded-lg border border-violet-400/30 px-3 py-2 text-xs text-violet-200 hover:bg-violet-950/40 disabled:opacity-50"
+                      >
+                        {uploadingId === character.id
+                          ? "Gerando imagem..."
+                          : "✦ Gerar imagem"}
+                      </button>
+
+
+
                       <button
                         type="button"
                         onClick={() => setGalleryCharacter(character)}
@@ -586,11 +727,10 @@ export default function CharacterStudio() {
                       </button>
 
                       <label
-                        className={`cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-center text-xs text-zinc-200 hover:bg-white/10 ${
-                          uploadingId === character.id
-                            ? "pointer-events-none opacity-50"
-                            : ""
-                        }`}
+                        className={`cursor-pointer rounded-lg border border-white/10 px-3 py-2 text-center text-xs text-zinc-200 hover:bg-white/10 ${uploadingId === character.id
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                          }`}
                       >
                         {uploadingId === character.id ? "Enviando…" : "+ Imagem"}
                         <input

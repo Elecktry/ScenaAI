@@ -1,29 +1,29 @@
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-
-function isDatabaseUnavailable(error: unknown) {
-  const code = (error as { code?: string } | null)?.code;
-  return code === "P1001" || code === "P1002" || code === "P1017";
-}
 
 export async function GET() {
   try {
     const characters = await prisma.character.findMany({
-      include: { images: { orderBy: { position: "asc" } } },
-      orderBy: { updatedAt: "desc" },
+      include: {
+        images: {
+          orderBy: {
+            position: "asc",
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
     });
 
     return NextResponse.json({ characters });
   } catch (error) {
-    console.error("Falha ao listar personagens:", error);
+    console.error("Erro ao carregar personagens:", error);
+
     return NextResponse.json(
-      {
-        error: isDatabaseUnavailable(error)
-          ? "Não foi possível conectar ao PostgreSQL. Confira DATABASE_URL e se o serviço está iniciado."
-          : "Não foi possível carregar os personagens. Execute as migrações do Prisma e tente novamente.",
-      },
-      { status: 503 }
+      { error: "Não foi possível carregar os personagens." },
+      { status: 500 }
     );
   }
 }
@@ -31,36 +31,58 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const name = typeof body.name === "string" ? body.name.trim() : "";
+
+    const name =
+      typeof body.name === "string" ? body.name.trim() : "";
 
     if (!name) {
-      return NextResponse.json({ error: "Informe o nome do personagem." }, { status: 400 });
-    }
-    if (name.length > 100) {
-      return NextResponse.json({ error: "O nome deve ter até 100 caracteres." }, { status: 400 });
-    }
-
-    const stringFields = ["summary", "appearance", "hair", "outfit", "personality", "visualStyle", "visualPrompt"] as const;
-    const values: Record<(typeof stringFields)[number], string> = {
-      summary: "", appearance: "", hair: "", outfit: "", personality: "",
-      visualStyle: "Cinematográfico", visualPrompt: "",
-    };
-
-    for (const field of stringFields) {
-      if (typeof body[field] === "string") values[field] = body[field].slice(0, 10000);
+      return NextResponse.json(
+        { error: "O nome do personagem é obrigatório." },
+        { status: 400 }
+      );
     }
 
     const character = await prisma.character.create({
-      data: { name, ...values },
-      include: { images: true },
+      data: {
+        name,
+        summary:
+          typeof body.summary === "string" ? body.summary : "",
+        appearance:
+          typeof body.appearance === "string" ? body.appearance : "",
+        hair: typeof body.hair === "string" ? body.hair : "",
+        outfit: typeof body.outfit === "string" ? body.outfit : "",
+        personality:
+          typeof body.personality === "string"
+            ? body.personality
+            : "",
+        visualStyle:
+          typeof body.visualStyle === "string"
+            ? body.visualStyle
+            : "Cinematográfico",
+        visualPrompt:
+          typeof body.visualPrompt === "string"
+            ? body.visualPrompt
+            : "",
+      },
+      include: {
+        images: {
+          orderBy: {
+            position: "asc",
+          },
+        },
+      },
     });
 
-    return NextResponse.json({ character }, { status: 201 });
-  } catch (error) {
-    console.error("Falha ao criar personagem:", error);
     return NextResponse.json(
-      { error: "Não foi possível salvar o personagem. Confira a conexão e as migrações do PostgreSQL." },
-      { status: 503 }
+      { success: true, character },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Erro ao criar personagem:", error);
+
+    return NextResponse.json(
+      { error: "Não foi possível criar o personagem." },
+      { status: 500 }
     );
   }
 }
