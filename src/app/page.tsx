@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ImportedVideos from "@/components/ImportedVideos";
 import VideoTransform from "@/components/VideoTransform";
+import CharacterStudio from "@/components/CharacterStudio";
 
 type Character = { id: string; name: string; description: string };
 type Location = { id: string; name: string; description: string };
@@ -33,7 +34,14 @@ type SavedProject = {
   updatedAt: string;
   data: Project;
 };
-type AppView = "home" | "projects" | "films" | "transform" | "library";
+type AppView =
+  | "home"
+  | "projects"
+  | "films"
+  | "transform"
+  | "library"
+  | "characters";
+
 
 const STORAGE_KEY = "scena-ai-projects-v1";
 
@@ -461,6 +469,7 @@ export default function Home() {
     { id: "home", label: "Início" },
     { id: "projects", label: "Meus filmes" },
     { id: "transform", label: "Transformar vídeo" },
+    { id: "characters", label: "Personagens" },
     { id: "library", label: "Biblioteca" },
   ];
 
@@ -660,8 +669,12 @@ export default function Home() {
             </div>
           )}
         </section>
+      ) : view === "characters" ? (
+        <CharacterStudio />
       ) : view === "transform" ? (
-        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><VideoTransform /></section>
+        < section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+          <VideoTransform />
+        </section>
       ) : view === "library" ? (
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
           <div className="mb-8"><h1 className="text-3xl font-semibold">Minha biblioteca</h1><p className="mt-2 text-sm text-zinc-400">Seus vídeos gerados e importados.</p></div>
@@ -747,42 +760,47 @@ export default function Home() {
           </section>
           {errorMessage && <p role="alert" className="mt-6 text-sm text-red-400">{errorMessage}</p>}
         </div>
-      )}
+      )
+      }
 
-      {renamingProjectId && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRenamingProjectId(null); }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="rename-title" className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
-            <h2 id="rename-title" className="text-xl font-semibold">Renomear projeto</h2>
-            <p className="mt-2 text-sm text-zinc-400">Escolha um nome fácil de reconhecer depois.</p>
-            <form onSubmit={(event) => { event.preventDefault(); saveRename(); }}>
-              <label htmlFor="rename-project" className="mb-2 mt-5 block text-sm text-zinc-300">Nome do projeto</label>
-              <input autoFocus id="rename-project" value={renameValue} onChange={(event) => setRenameValue(event.target.value)} maxLength={100} className="w-full rounded-xl border border-white/15 bg-black px-4 py-3 text-sm outline-none focus:border-white/40" />
+      {
+        renamingProjectId && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRenamingProjectId(null); }}>
+            <section role="dialog" aria-modal="true" aria-labelledby="rename-title" className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+              <h2 id="rename-title" className="text-xl font-semibold">Renomear projeto</h2>
+              <p className="mt-2 text-sm text-zinc-400">Escolha um nome fácil de reconhecer depois.</p>
+              <form onSubmit={(event) => { event.preventDefault(); saveRename(); }}>
+                <label htmlFor="rename-project" className="mb-2 mt-5 block text-sm text-zinc-300">Nome do projeto</label>
+                <input autoFocus id="rename-project" value={renameValue} onChange={(event) => setRenameValue(event.target.value)} maxLength={100} className="w-full rounded-xl border border-white/15 bg-black px-4 py-3 text-sm outline-none focus:border-white/40" />
+                <div className="mt-6 flex justify-end gap-3">
+                  <button type="button" onClick={() => setRenamingProjectId(null)} className="rounded-lg border border-white/10 px-4 py-2.5 text-sm hover:bg-white/5">Cancelar</button>
+                  <button type="submit" disabled={!renameValue.trim()} className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black disabled:opacity-40">Salvar nome</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )
+      }
+
+      {
+        deleteTarget && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}>
+            <section role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description" className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+              <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-red-950/60 text-xl text-red-300">!</div>
+              <h2 id="delete-title" className="text-xl font-semibold">Excluir este projeto?</h2>
+              <p id="delete-description" className="mt-2 text-sm leading-6 text-zinc-400">O projeto <span className="font-medium text-white">{deleteTarget.data.title}</span> será removido deste navegador. Esta ação não pode ser desfeita. Os vídeos já gerados na biblioteca não serão apagados por esta ação.</p>
               <div className="mt-6 flex justify-end gap-3">
-                <button type="button" onClick={() => setRenamingProjectId(null)} className="rounded-lg border border-white/10 px-4 py-2.5 text-sm hover:bg-white/5">Cancelar</button>
-                <button type="submit" disabled={!renameValue.trim()} className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black disabled:opacity-40">Salvar nome</button>
+                <button onClick={() => setDeleteTarget(null)} className="rounded-lg border border-white/10 px-4 py-2.5 text-sm hover:bg-white/5">Cancelar</button>
+                <button onClick={deleteProject} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500">Excluir projeto</button>
               </div>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {deleteTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}>
-          <section role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description" className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
-            <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-red-950/60 text-xl text-red-300">!</div>
-            <h2 id="delete-title" className="text-xl font-semibold">Excluir este projeto?</h2>
-            <p id="delete-description" className="mt-2 text-sm leading-6 text-zinc-400">O projeto <span className="font-medium text-white">{deleteTarget.data.title}</span> será removido deste navegador. Esta ação não pode ser desfeita. Os vídeos já gerados na biblioteca não serão apagados por esta ação.</p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setDeleteTarget(null)} className="rounded-lg border border-white/10 px-4 py-2.5 text-sm hover:bg-white/5">Cancelar</button>
-              <button onClick={deleteProject} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-500">Excluir projeto</button>
-            </div>
-          </section>
-        </div>
-      )}
+            </section>
+          </div>
+        )
+      }
 
       <footer className="border-t border-white/10 px-6 py-8 text-center">
         <p className="text-xs tracking-widest text-zinc-600">SCENA.AI — SUA IDEIA, NOSSO ESTÚDIO.</p>
       </footer>
-    </main>
+    </main >
   );
 }

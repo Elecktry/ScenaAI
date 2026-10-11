@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User is a placeholder for future authentication. No login system is enabled yet.
+model User {
+  id        String      @id @default(cuid())
+  email     String?     @unique
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  characters Character[]
+}
+
+model Character {
+  id             String           @id @default(cuid())
+  name           String
+  summary        String           @default("")
+  appearance     String           @default("")
+  hair           String           @default("")
+  outfit         String           @default("")
+  personality    String           @default("")
+  visualStyle    String           @default("Cinematográfico")
+  visualPrompt   String           @default("")
+  userId         String?
+  user           User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images         CharacterImage[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model CharacterImage {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  url         String
+  storageKey  String?
+  mimeType    String?
+  sizeBytes   Int?
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([characterId, position])
+}
