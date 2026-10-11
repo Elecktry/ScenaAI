@@ -1,0 +1,44 @@
+﻿
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\README.md
+LINHA: 290
+CODIGO: const url = await client.agents.media.upload(imageBytes, 'jpeg', 'image');
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\README.md
+LINHA: 307
+CODIGO: `media.upload(bytes, extension, type)` performs a presigned upload and returns
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\README.md
+LINHA: 384
+CODIGO: - `upload(data: Buffer | Uint8Array, contentType: string): Promise<string>` - Upload any data
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\client.d.ts
+LINHA: 26
+CODIGO:     upload(data: Buffer | Uint8Array, contentType: string): Promise<string>;
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\client.js
+LINHA: 102
+CODIGO:         const response = await this.client.post('/files/generate-upload-url', {
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\client.js
+LINHA: 113
+CODIGO:     async upload(data, contentType) {
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\client.js
+LINHA: 123
+CODIGO:     async uploadImage(imageBuffer, format = 'jpeg') {
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\client.js
+LINHA: 124
+CODIGO:         return this.upload(imageBuffer, `image/${format}`);
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\agents\resources.d.ts
+LINHA: 35
+CODIGO:     upload(data: Buffer | Uint8Array, extension: string, type?: MediaType): Promise<string>;
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\agents\resources.js
+LINHA: 119
+CODIGO:     async upload(data, extension, type = 'image') {
+
+ARQUIVO: C:\Users\ezequ\Desktop\PROJETOS IA\scena-ai\node_modules\@higgsfield\client\dist\v2\agents.test.js
+LINHA: 183
+CODIGO:     const result = new resources_1.Media(api, 1234).upload(Buffer.from('image bytes'), 'jpeg');
