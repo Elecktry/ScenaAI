@@ -8,29 +8,36 @@ datasource db {
 }
 
 // User is a placeholder for future authentication. No login system is enabled yet.
+
 model User {
-  id        String      @id @default(cuid())
-  email     String?     @unique
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  characters Character[]
+  id            String       @id @default(cuid())
+  email         String?      @unique
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  name          String
+  emailVerified Boolean      @default(false)
+  image         String?
+  sessions      Session[]
+  accounts      Account[]
+  generations   Generation[]
+  characters    Character[]
 }
 
 model Character {
-  id             String           @id @default(cuid())
-  name           String
-  summary        String           @default("")
-  appearance     String           @default("")
-  hair           String           @default("")
-  outfit         String           @default("")
-  personality    String           @default("")
-  visualStyle    String           @default("Cinematográfico")
-  visualPrompt   String           @default("")
-  userId         String?
-  user           User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  images         CharacterImage[]
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id           String           @id @default(cuid())
+  name         String
+  summary      String           @default("")
+  appearance   String           @default("")
+  hair         String           @default("")
+  outfit       String           @default("")
+  personality  String           @default("")
+  visualStyle  String           @default("Cinematográfico")
+  visualPrompt String           @default("")
+  userId       String?
+  user         User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images       CharacterImage[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([userId])
   @@index([updatedAt])
@@ -48,4 +55,75 @@ model CharacterImage {
   createdAt   DateTime  @default(now())
 
   @@index([characterId, position])
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Generation {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider          String @default("higgsfield")
+  providerRequestId String @unique
+  providerModel     String
+
+  prompt       String
+  duration     Int
+  status       String  @default("queued")
+  videoUrl     String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
 }

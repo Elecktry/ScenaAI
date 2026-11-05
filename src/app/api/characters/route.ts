@@ -1,10 +1,26 @@
 
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 
 export async function GET() {
   try {
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const characters = await prisma.character.findMany({
+      where: {
+        userId: session.user.id,
+      },
       include: {
         images: {
           orderBy: {
@@ -30,6 +46,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
 
     const name =
@@ -44,6 +71,7 @@ export async function POST(request: Request) {
 
     const character = await prisma.character.create({
       data: {
+        userId: session.user.id,
         name,
         summary:
           typeof body.summary === "string" ? body.summary : "",

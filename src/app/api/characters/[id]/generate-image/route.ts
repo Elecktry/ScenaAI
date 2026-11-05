@@ -1,8 +1,10 @@
 
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 import { config, higgsfield } from "@higgsfield/client/v2";
 
 export const maxDuration = 60;
@@ -18,7 +20,21 @@ export async function POST(
   let savedPath: string | null = null;
 
   try {
+    // 1. Verificar autenticação
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const { id } = await context.params;
+
+    // 2. Verificar credenciais da Higgsfield
     const credentials = process.env.HF_CREDENTIALS;
 
     if (!credentials) {
@@ -28,8 +44,12 @@ export async function POST(
       );
     }
 
-    const character = await prisma.character.findUnique({
-      where: { id },
+    // 3. Buscar personagem pertencente ao usuário
+    const character = await prisma.character.findFirst({
+      where: {
+        id,
+        userId: session.user.id,
+      },
     });
 
     if (!character) {
@@ -39,6 +59,7 @@ export async function POST(
       );
     }
 
+    // 4. Instruções de estilo visual
     const styleInstructions: Record<string, string> = {
       "Realista": [
         "Create a photorealistic live-action human character.",
@@ -84,11 +105,14 @@ export async function POST(
       ].join(" ")
     };
 
-    const selectedStyle = character.visualStyle || "Cinematográfico";
+    const selectedStyle =
+      character.visualStyle || "Cinematográfico";
+
     const styleInstruction =
       styleInstructions[selectedStyle] ??
       styleInstructions["Cinematográfico"];
 
+    // 5. Construção do prompt
     const prompt = [
       "CHARACTER IDENTITY — preserve these defining characteristics:",
       `Name: ${character.name}`,
@@ -125,6 +149,7 @@ export async function POST(
       );
     }
 
+    // 6. Gerar imagem na Higgsfield
     config({ credentials });
 
     const jobSet = await higgsfield.subscribe(
@@ -140,7 +165,6 @@ export async function POST(
       }
     );
 
-
     const result = jobSet as unknown as {
       status?: string;
       isCompleted?: boolean;
@@ -154,6 +178,7 @@ export async function POST(
     };
 
     console.log("Higgsfield status:", result.status);
+
     console.log(
       "Higgsfield resultado:",
       JSON.stringify({
@@ -180,17 +205,22 @@ export async function POST(
       );
     }
 
-
+    // 7. Validar URL retornada
     const parsedUrl = new URL(imageUrl);
 
     if (parsedUrl.protocol !== "https:") {
-      throw new Error("A Higgsfield retornou uma URL de imagem inválida.");
+      throw new Error(
+        "A Higgsfield retornou uma URL de imagem inválida."
+      );
     }
 
+    // 8. Baixar imagem
     const imageResponse = await fetch(parsedUrl.toString());
 
     if (!imageResponse.ok) {
-      throw new Error("Não foi possível baixar a imagem gerada.");
+      throw new Error(
+        "Não foi possível baixar a imagem gerada."
+      );
     }
 
     const mimeType = (
@@ -214,14 +244,28 @@ export async function POST(
       );
     }
 
-    const bytes = Buffer.from(await imageResponse.arrayBuffer());
+    const bytes = Buffer.from(
+      await imageResponse.arrayBuffer()
+    );
 
-    if (bytes.length === 0 || bytes.length > 15 * 1024 * 1024) {
-      throw new Error("A imagem retornada está vazia ou excede 15 MB.");
+    if (
+      bytes.length === 0 ||
+      bytes.length > 15 * 1024 * 1024
+    ) {
+      throw new Error(
+        "A imagem retornada está vazia ou excede 15 MB."
+      );
     }
 
+    // 9. Salvar imagem
     const filename = `${crypto.randomUUID()}${extension}`;
-    const relativeDirectory = path.join("uploads", "characters", id);
+
+    const relativeDirectory = path.join(
+      "uploads",
+      "characters",
+      id
+    );
+
     const absoluteDirectory = path.join(
       process.cwd(),
       "public",
@@ -231,14 +275,18 @@ export async function POST(
     await mkdir(absoluteDirectory, { recursive: true });
 
     savedPath = path.join(absoluteDirectory, filename);
-    await writeFile(savedPath, bytes, { flag: "wx" });
+
+    await writeFile(
+      savedPath,
+      bytes,
+      { flag: "wx" }
+    );
 
     const url = `/${relativeDirectory
       .split(path.sep)
       .join("/")}/${filename}`;
 
-    // A nova imagem vira a capa (posição 0).
-    // As referências existentes são preservadas e deslocadas.
+    // 10. Registrar imagem e reorganizar capa
     const image = await prisma.$transaction(async (tx) => {
       const existingImages = await tx.characterImage.findMany({
         where: { characterId: id },
@@ -246,18 +294,33 @@ export async function POST(
         select: { id: true },
       });
 
-      // Usa posições temporárias para evitar colisões de posição.
-      for (let index = 0; index < existingImages.length; index++) {
+      for (
+        let index = 0;
+        index < existingImages.length;
+        index++
+      ) {
         await tx.characterImage.update({
-          where: { id: existingImages[index].id },
-          data: { position: -(index + 1) },
+          where: {
+            id: existingImages[index].id,
+          },
+          data: {
+            position: -(index + 1),
+          },
         });
       }
 
-      for (let index = 0; index < existingImages.length; index++) {
+      for (
+        let index = 0;
+        index < existingImages.length;
+        index++
+      ) {
         await tx.characterImage.update({
-          where: { id: existingImages[index].id },
-          data: { position: index + 1 },
+          where: {
+            id: existingImages[index].id,
+          },
+          data: {
+            position: index + 1,
+          },
         });
       }
 
@@ -283,12 +346,16 @@ export async function POST(
       },
       { status: 201 }
     );
+
   } catch (error) {
     if (savedPath) {
       await unlink(savedPath).catch(() => undefined);
     }
 
-    console.error("Erro ao gerar imagem com Higgsfield:", error);
+    console.error(
+      "Erro ao gerar imagem com Higgsfield:",
+      error
+    );
 
     return NextResponse.json(
       {

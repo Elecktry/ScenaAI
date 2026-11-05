@@ -1,5 +1,8 @@
+
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
 
 export const maxDuration = 30;
 
@@ -30,26 +33,69 @@ const characterSchema = {
 
 export async function POST(request: Request) {
   try {
+    // 1. Verificar autenticação
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: "Você precisa estar autenticado." },
+        { status: 401 }
+      );
+    }
+
+    // 2. Verificar configuração da OpenAI
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        {
-          error:
-            "A chave da OpenAI nÃ£o estÃ¡ configurada no servidor. Confira o arquivo .env.",
-        },
+        { error: "A chave da OpenAI não está configurada no servidor." },
         { status: 500 }
       );
     }
 
-    const body = await request.json();
+    // 3. Limitar tamanho do corpo da requisição
+    const contentLength = Number(request.headers.get("content-length") || 0);
+
+    if (contentLength > 16_000) {
+      return NextResponse.json(
+        { error: "A requisição é muito grande." },
+        { status: 413 }
+      );
+    }
+
+    // 4. Validar JSON
+    let body: unknown;
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "O corpo da requisição precisa ser um JSON válido." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("idea" in body)
+    ) {
+      return NextResponse.json(
+        { error: "Informe a ideia do personagem." },
+        { status: 400 }
+      );
+    }
+
+    const data = body as Record<string, unknown>;
 
     const idea =
-      typeof body.idea === "string" ? body.idea.trim() : "";
+      typeof data.idea === "string" ? data.idea.trim() : "";
 
     const visualStyle =
-      typeof body.visualStyle === "string" &&
-      body.visualStyle.trim()
-        ? body.visualStyle.trim()
-        : "CinematogrÃ¡fico";
+      typeof data.visualStyle === "string" &&
+      data.visualStyle.trim()
+        ? data.visualStyle.trim()
+        : "Cinematográfico";
 
     if (!idea) {
       return NextResponse.json(
@@ -60,11 +106,19 @@ export async function POST(request: Request) {
 
     if (idea.length > 5000) {
       return NextResponse.json(
-        { error: "A descriÃ§Ã£o deve ter no mÃ¡ximo 5.000 caracteres." },
+        { error: "A descrição deve ter no máximo 5.000 caracteres." },
         { status: 400 }
       );
     }
 
+    if (visualStyle.length > 100) {
+      return NextResponse.json(
+        { error: "O estilo visual deve ter no máximo 100 caracteres." },
+        { status: 400 }
+      );
+    }
+
+    // 5. Gerar ficha com IA
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -72,20 +126,20 @@ export async function POST(request: Request) {
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
       instructions: `
-VocÃª Ã© o diretor criativo do SCENA.AI, especializado em criar
-personagens originais para cinema, sÃ©ries, animaÃ§Ã£o e vÃdeos.
+Você é o diretor criativo do SCENA.AI, especializado em criar
+personagens originais para cinema, séries, animação e vídeos.
 
-Crie uma ficha coerente e detalhada com base na ideia do usuÃ¡rio.
-Use portuguÃªs do Brasil em todos os campos.
-Transforme referÃªncias a personagens conhecidos em uma proposta
+Crie uma ficha coerente e detalhada com base na ideia do usuário.
+Use português do Brasil em todos os campos.
+Transforme referências a personagens conhecidos em uma proposta
 original, sem copiar exatamente o personagem existente.
-Mantenha consistÃªncia entre aparÃªncia, cabelo, roupa e personalidade.
+Mantenha consistência entre aparência, cabelo, roupa e personalidade.
 O visualPrompt deve ser um prompt visual detalhado, pronto para ser
-usado futuramente em uma ferramenta de geraÃ§Ã£o de imagens.
-NÃ£o afirme que uma imagem jÃ¡ foi gerada.
+usado futuramente em uma ferramenta de geração de imagens.
+Não afirme que uma imagem já foi gerada.
 `,
       input: `
-IDEIA DO USUÃRIO:
+IDEIA DO USUÁRIO:
 ${idea}
 
 ESTILO VISUAL ESCOLHIDO:
@@ -104,7 +158,7 @@ Gere uma ficha completa para esse personagem.
     });
 
     if (!response.output_text) {
-      throw new Error("A IA nÃ£o retornou uma ficha.");
+      throw new Error("A IA não retornou uma ficha.");
     }
 
     const draft = JSON.parse(response.output_text);
@@ -113,8 +167,7 @@ Gere uma ficha completa para esse personagem.
       success: true,
       mode: "openai",
       draft,
-      message:
-        "Ficha criada com IA! Revise os campos antes de salvar.",
+      message: "Ficha criada com IA! Revise os campos antes de salvar.",
     });
   } catch (error) {
     console.error("Erro ao gerar ficha:", error);
@@ -122,10 +175,7 @@ Gere uma ficha completa para esse personagem.
     if (error instanceof OpenAI.APIError) {
       if (error.status === 401) {
         return NextResponse.json(
-          {
-            error:
-              "A chave da OpenAI Ã© invÃ¡lida. Confira a configuraÃ§Ã£o no .env.",
-          },
+          { error: "A chave da OpenAI é inválida. Confira o .env." },
           { status: 401 }
         );
       }
@@ -134,7 +184,7 @@ Gere uma ficha completa para esse personagem.
         return NextResponse.json(
           {
             error:
-              "A API da OpenAI estÃ¡ sem cota disponÃvel ou recebeu muitas solicitaÃ§Ãµes. Confira o uso e o faturamento da API.",
+              "A API da OpenAI está sem cota disponível ou recebeu muitas solicitações. Confira o uso e o faturamento.",
           },
           { status: 429 }
         );
@@ -144,7 +194,7 @@ Gere uma ficha completa para esse personagem.
     return NextResponse.json(
       {
         error:
-          "NÃ£o foi possÃvel gerar a ficha agora. Confira o terminal para ver o erro.",
+          "Não foi possível gerar a ficha agora. Confira o terminal para ver o erro.",
       },
       { status: 500 }
     );

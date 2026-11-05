@@ -1,46 +1,61 @@
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { config, higgsfield } from "@higgsfield/client/v2";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 type GenerateRequest = {
-  prompt?: string;
-  duration?: number;
+  prompt?: unknown;
+  duration?: unknown;
 };
 
-export async function POST(request: NextRequest) {
+const PROVIDER_MODEL = "bytedance/seedance-2.5/text-to-video";
+
+export async function POST(request: Request) {
   try {
-    const credentials = process.env.HF_CREDENTIALS;
-
-    if (!credentials) {
-      return NextResponse.json(
-        { error: "HF_CREDENTIALS não está configurada no servidor." },
-        { status: 500 }
-      );
-    }
-
-    const separator = credentials.indexOf(":");
-
-    if (separator <= 0 || separator === credentials.length - 1) {
-      return NextResponse.json(
-        {
-          error:
-            "HF_CREDENTIALS inválida. Verifique o formato KEY_ID:KEY_SECRET.",
-        },
-        { status: 500 }
-      );
-    }
-
-    const keyId = credentials.slice(0, separator);
-    const keySecret = credentials.slice(separator + 1);
-
-    config({
-      credentials: `${keyId}:${keySecret}`,
+    // 1. Verificar autenticação
+    const session = await auth.api.getSession({
+      headers: await headers(),
     });
 
+    if (!session) {
+      return NextResponse.json(
+        { error: "Você precisa estar autenticado." },
+        { status: 401 }
+      );
+    }
+
+    // 2. Verificar tamanho da requisição
+    const contentLength = Number(
+      request.headers.get("content-length") || 0
+    );
+
+    if (contentLength > 20_000) {
+      return NextResponse.json(
+        { error: "A requisição é muito grande." },
+        { status: 413 }
+      );
+    }
+
+    // 3. Validar JSON
     let body: GenerateRequest;
 
     try {
-      body = (await request.json()) as GenerateRequest;
+      const parsed: unknown = await request.json();
+
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        return NextResponse.json(
+          { error: "O corpo precisa ser um objeto JSON válido." },
+          { status: 400 }
+        );
+      }
+
+      body = parsed as GenerateRequest;
     } catch {
       return NextResponse.json(
         { error: "O corpo da requisição não contém JSON válido." },
@@ -48,7 +63,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const prompt = body.prompt?.trim();
+    // 4. Validar prompt
+    const prompt =
+      typeof body.prompt === "string"
+        ? body.prompt.trim()
+        : "";
 
     if (!prompt) {
       return NextResponse.json(
@@ -64,22 +83,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 5. Validar duração
     const duration = body.duration ?? 5;
 
     if (
       typeof duration !== "number" ||
-      !Number.isFinite(duration) ||
+      !Number.isInteger(duration) ||
       duration < 1 ||
       duration > 30
     ) {
       return NextResponse.json(
-        { error: "A duração deve ser um número entre 1 e 30 segundos." },
+        { error: "A duração deve ser um número inteiro entre 1 e 30 segundos." },
         { status: 400 }
       );
     }
 
+    // 6. Verificar credenciais da Higgsfield
+    const credentials = process.env.HF_CREDENTIALS;
+
+    if (!credentials) {
+      return NextResponse.json(
+        { error: "A integração com a Higgsfield não está configurada." },
+        { status: 500 }
+      );
+    }
+
+    const separator = credentials.indexOf(":");
+
+    if (separator <= 0 || separator === credentials.length - 1) {
+      return NextResponse.json(
+        { error: "As credenciais da Higgsfield estão inválidas." },
+        { status: 500 }
+      );
+    }
+
+    const keyId = credentials.slice(0, separator);
+    const keySecret = credentials.slice(separator + 1);
+
+    config({
+      credentials: `${keyId}:${keySecret}`,
+    });
+
+    // 7. Iniciar geração na Higgsfield
     const result = await higgsfield.subscribe(
-      "bytedance/seedance-2.5/text-to-video",
+      PROVIDER_MODEL,
       {
         input: {
           prompt,
@@ -93,9 +140,10 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    // 8. Validar resposta do provedor
     if (!result.request_id) {
       console.error(
-        "A Higgsfield não retornou request_id:",
+        "Higgsfield não retornou request_id:",
         result.status
       );
 
@@ -108,12 +156,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 9. Salvar geração vinculada ao usuário
+    const generation = await prisma.generation.create({
+      data: {
+        userId: session.user.id,
+        provider: "higgsfield",
+        providerRequestId: result.request_id,
+        providerModel: PROVIDER_MODEL,
+        prompt,
+        duration,
+        status: String(result.status ?? "queued").toLowerCase(),
+      },
+      select: {
+        id: true,
+        providerRequestId: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    // 10. Retornar dados ao frontend
     return NextResponse.json(
       {
         success: true,
-        requestId: result.request_id,
-        status: result.status,
-        message: "Geração enviada para processamento.",
+        generationId: generation.id,
+        requestId: generation.providerRequestId,
+        status: generation.status,
+        createdAt: generation.createdAt,
+        message: "Geração enviada e registrada com sucesso.",
       },
       { status: 202 }
     );
@@ -123,11 +193,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Não foi possível iniciar a geração do vídeo.",
+          "Não foi possível iniciar a geração do vídeo. Tente novamente mais tarde.",
       },
-      { status: 500 }
+      { status: 502 }
     );
   }
 }

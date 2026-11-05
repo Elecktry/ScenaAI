@@ -1,6 +1,8 @@
 
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
 
 type RouteContext = {
   params: Promise<{
@@ -9,12 +11,44 @@ type RouteContext = {
   }>;
 };
 
+async function getAuthenticatedUser() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  return session?.user ?? null;
+}
+
 export async function PATCH(
   _request: Request,
   { params }: RouteContext
 ) {
   try {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const { id, imageId } = await params;
+
+    const character = await prisma.character.findFirst({
+      where: {
+        id,
+        userId: user.id,
+      },
+      select: { id: true },
+    });
+
+    if (!character) {
+      return NextResponse.json(
+        { error: "Personagem não encontrado." },
+        { status: 404 }
+      );
+    }
 
     const selectedImage = await prisma.characterImage.findFirst({
       where: {
@@ -36,7 +70,6 @@ export async function PATCH(
         orderBy: [{ position: "asc" }, { id: "asc" }],
       });
 
-      // Primeiro, atribui posições temporárias para evitar colisões.
       for (let index = 0; index < characterImages.length; index++) {
         await tx.characterImage.update({
           where: { id: characterImages[index].id },
@@ -44,13 +77,11 @@ export async function PATCH(
         });
       }
 
-      // A imagem escolhida passa a ser a capa.
       await tx.characterImage.update({
         where: { id: imageId },
         data: { position: 0 },
       });
 
-      // As demais imagens ficam depois da capa.
       let nextPosition = 1;
 
       for (const image of characterImages) {
@@ -84,7 +115,31 @@ export async function DELETE(
   { params }: RouteContext
 ) {
   try {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Não autenticado." },
+        { status: 401 }
+      );
+    }
+
     const { id, imageId } = await params;
+
+    const character = await prisma.character.findFirst({
+      where: {
+        id,
+        userId: user.id,
+      },
+      select: { id: true },
+    });
+
+    if (!character) {
+      return NextResponse.json(
+        { error: "Personagem não encontrado." },
+        { status: 404 }
+      );
+    }
 
     const image = await prisma.characterImage.findFirst({
       where: {
@@ -100,12 +155,11 @@ export async function DELETE(
       );
     }
 
-    await prisma.characterImage.delete({
-      where: { id: imageId },
-    });
-
-    // Reorganiza as posições para manter a primeira imagem como capa.
     await prisma.$transaction(async (tx) => {
+      await tx.characterImage.delete({
+        where: { id: imageId },
+      });
+
       const remainingImages = await tx.characterImage.findMany({
         where: { characterId: id },
         orderBy: [{ position: "asc" }, { id: "asc" }],
